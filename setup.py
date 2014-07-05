@@ -18,7 +18,13 @@
 ###############################################################################
 
 from setuptools import setup, find_packages
+from pip.req import parse_requirements
+import sys
+import os
 
+if sys.argv[-1] == 'publish':
+    os.system('python setup.py sdist upload')
+    sys.exit()
 
 with open('README.md') as f:
     readme = f.read()
@@ -26,14 +32,32 @@ with open('README.md') as f:
 with open('LICENSE') as f:
     license = f.read()
 
+# parse_requirements() returns generator of pip.req.InstallRequirement objects
+install_reqs = parse_requirements('requirements.txt')
+
+# reqs is a list of requirement
+reqs = [str(ir.req) for ir in install_reqs]
+
 setup(
     name='girder',
-    version='0.1',
-    description='A data management platform.',
+    version='0.1.10',
+    description='High-performance data management.',
     long_description=readme,
     author='Kitware',
     author_email='kitware@kitware.com',
     url='https://github.com/girder/girder',
-    license=license,
-    packages=find_packages(exclude=('tests', 'docs'))
+    packages=find_packages(exclude=('tests', 'docs')),
+    license='Apache 2.0',
+    zip_safe=True,
+    install_requires=reqs,
+    package_dir={'girder': 'girder'},
+    package_data={'girder': ['conf/girder.dist.cfg']},
+    classifiers=(
+        'Development Status :: 5 - Production/Stable',
+        'Intended Audience :: Developers',
+        'Natural Language :: English',
+        'License :: OSI Approved :: Apache Software License',
+        'Programming Language :: Python',
+        'Programming Language :: Python :: 2.7',
+    )
 )
