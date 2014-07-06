@@ -10,6 +10,7 @@ Girder: High-Performance Data Management
 
    prerequisites
    installation
+   configuration
    deploy
    user-guide
    build-docs
@@ -22,4 +23,3 @@ Indices and tables
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
