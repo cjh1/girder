@@ -34,6 +34,7 @@ def _mergeConfig(filename):
     for option, value in global_config.iteritems():
         cherrypy.config[option] = value
 
+
 def _loadConfigsByPrecedent():
     """
     Load configuration in reverse order of precedent.
@@ -53,6 +54,7 @@ def _loadConfigsByPrecedent():
     for curConfigPath in configPaths:
         if os.path.exists(curConfigPath):
             _mergeConfig(curConfigPath)
+
 
 def loadConfig():
 
