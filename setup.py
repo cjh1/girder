@@ -40,7 +40,7 @@ reqs = [str(ir.req) for ir in install_reqs]
 
 setup(
     name='girder',
-    version='0.1.18',
+    version='0.1.22',
     description='High-performance data management.',
     long_description=readme,
     author='Kitware',
