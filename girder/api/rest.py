@@ -28,12 +28,11 @@ import types
 
 from . import docs
 from girder import events, logger
-from girder.constants import AccessType, TerminalColor
-from girder.models.model_base import AccessException, ValidationException,\
-    AccessControlledModel
+from girder.constants import AccessType, SettingKey, TerminalColor
+from girder.models.model_base import AccessException, ValidationException
 from girder.utility.model_importer import ModelImporter
 from girder.utility import config
-from bson.objectid import ObjectId, InvalidId
+from bson.objectid import ObjectId
 
 
 _importer = ModelImporter()
@@ -59,12 +58,12 @@ def _cacheAuthUser(fun):
     return inner
 
 
-def loadmodel(map, model, level=None):
+def loadmodel(map, model, plugin='_core', level=None):
     """
     This is a meta-decorator that can be used to convert parameters that are
     ObjectID's into the actual documents.
     """
-    _model = _importer.model(model)
+    _model = _importer.model(model, plugin)
 
     def meta(fun):
         def wrapper(self, *args, **kwargs):
@@ -85,6 +84,31 @@ def loadmodel(map, model, level=None):
     return meta
 
 
+def _createResponse(val):
+    """
+    Helper that encodes the response according to the requested "Accepts"
+    header from the client. Currently supports "application/json" and
+    "text/html".
+    """
+    accepts = cherrypy.request.headers.elements('Accept')
+    for accept in accepts:
+        if accept.value == 'application/json':
+            break
+        elif accept.value == 'text/html':  # pragma: no cover
+            # Pretty-print and HTMLify the response for the browser
+            cherrypy.response.headers['Content-Type'] = 'text/html'
+            resp = json.dumps(val, indent=4, sort_keys=True,
+                              separators=(',', ': '), default=str)
+            resp = resp.replace(' ', '&nbsp;').replace('\n', '<br />')
+            resp = '<div style="font-family:monospace;">%s</div>' % resp
+            return resp
+
+    # Default behavior will just be normal JSON output. Keep this
+    # outside of the loop body in case no Accept header is passed.
+    cherrypy.response.headers['Content-Type'] = 'application/json'
+    return json.dumps(val, default=str)
+
+
 def endpoint(fun):
     """
     REST HTTP method endpoints should use this decorator. It converts the return
@@ -99,17 +123,7 @@ def endpoint(fun):
     """
     def endpointDecorator(self, *args, **kwargs):
         try:
-            # First, we should encode any unicode form data down into
-            # UTF-8 so the actual REST classes are always dealing with
-            # str types.
-            params = {}
-            for k, v in kwargs.iteritems():
-                if type(v) in (str, unicode):
-                    params[k] = v.encode('utf-8')
-                else:
-                    params[k] = v  # pragma: no cover
-
-            val = fun(self, args, params)
+            val = fun(self, args, kwargs)
 
             if isinstance(val, types.FunctionType):
                 # If the endpoint returned a function, we assume it's a
@@ -130,6 +144,7 @@ def endpoint(fun):
                 cherrypy.response.status = 401
             else:
                 cherrypy.response.status = 403
+                logger.exception('403 Error')
             val = {'message': e.message, 'type': 'access'}
         except ValidationException as e:
             cherrypy.response.status = 400
@@ -138,7 +153,7 @@ def endpoint(fun):
                 val['field'] = e.field
         except cherrypy.HTTPRedirect:
             raise
-        except:  # pragma: no cover
+        except:
             # These are unexpected failures; send a 500 status
             logger.exception('500 Error')
             cherrypy.response.status = 500
@@ -150,23 +165,7 @@ def endpoint(fun):
                 # Unless we are in production mode, send a traceback too
                 val['trace'] = traceback.extract_tb(tb)
 
-        accepts = cherrypy.request.headers.elements('Accept')
-        for accept in accepts:
-            if accept.value == 'application/json':
-                break
-            elif accept.value == 'text/html':  # pragma: no cover
-                # Pretty-print and HTMLify the response for the browser
-                cherrypy.response.headers['Content-Type'] = 'text/html'
-                resp = json.dumps(val, indent=4, sort_keys=True,
-                                  separators=(',', ': '), default=str)
-                resp = resp.replace(' ', '&nbsp;').replace('\n', '<br />')
-                resp = '<div style="font-family:monospace;">%s</div>' % resp
-                return resp
-
-        # Default behavior will just be normal JSON output. Keep this
-        # outside of the loop body in case no Accept header is passed.
-        cherrypy.response.headers['Content-Type'] = 'application/json'
-        return json.dumps(val, default=str)
+        return _createResponse(val)
     return endpointDecorator
 
 
@@ -237,9 +236,10 @@ class Resource(ModelImporter):
             resource = handler.__module__.rsplit('.', 1)[-1]
 
         if hasattr(handler, 'description'):
-            docs.addRouteDocs(
-                resource=resource, route=route, method=method,
-                info=handler.description.asDict(), handler=handler)
+            if handler.description is not None:
+                docs.addRouteDocs(
+                    resource=resource, route=route, method=method,
+                    info=handler.description.asDict(), handler=handler)
         elif not nodoc:
             routePath = '/'.join([resource] + list(route))
             print TerminalColor.warning(
@@ -348,6 +348,29 @@ class Resource(ModelImporter):
             if param not in provided:
                 raise RestException("Parameter '%s' is required." % param)
 
+    def boolParam(self, key, params, default=None):
+        """
+        Coerce a parameter value from a str to a bool. This function is case
+        insensitive. The following string values will be interpreted as True:
+
+          'true'
+          'on'
+          '1'
+          'yes'
+
+        All other strings will be interpreted as False. If the given param
+        is not passed at all, returns the value specified by the default arg.
+        """
+        if key not in params:
+            return default
+
+        val = params[key]
+
+        if type(val) is bool:
+            return val
+
+        return val.lower().strip() in ('true', 'on', '1', 'yes')
+
     def requireAdmin(self, user):
         """
         Calling this on a user will ensure that they have admin rights.
@@ -435,6 +458,29 @@ class Resource(ModelImporter):
 
         else:  # user is not logged in
             return (None, None) if returnToken else None
+
+    def sendAuthTokenCookie(self, user):
+        """ Helper method to send the authentication cookie """
+        days = int(self.model('setting').get(
+            SettingKey.COOKIE_LIFETIME, default=180))
+        token = self.model('token').createToken(user, days=days)
+
+        cookie = cherrypy.response.cookie
+        cookie['authToken'] = json.dumps({
+            'userId': str(user['_id']),
+            'token': str(token['_id'])
+        })
+        cookie['authToken']['path'] = '/'
+        cookie['authToken']['expires'] = days * 3600 * 24
+
+        return token
+
+    def deleteAuthTokenCookie(self):
+        """ Helper method to kill the authentication cookie """
+        cookie = cherrypy.response.cookie
+        cookie['authToken'] = ''
+        cookie['authToken']['path'] = '/'
+        cookie['authToken']['expires'] = 0
 
     @endpoint
     def DELETE(self, path, params):

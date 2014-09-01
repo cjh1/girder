@@ -37,7 +37,6 @@ class Setting(Model):
         assumes it is a core setting and does the validation here.
         """
         key = doc['key']
-        # TODO allow plugins to intercept the set setting event
 
         if key == SettingKey.PLUGINS_ENABLED:
             if not type(doc['value']) is list:
@@ -52,12 +51,20 @@ class Setting(Model):
             if not doc['value']:
                 raise ValidationException(
                     'Email from address must not be blank.', 'value')
+        elif key == SettingKey.REGISTRATION_POLICY:
+            doc['value'] = doc['value'].lower()
+
+            if doc['value'] not in ('open', 'closed'):
+                raise ValidationException(
+                    'Registration policy must be either "open" or "closed".',
+                    'value')
         elif key == SettingKey.SMTP_HOST:
             if not doc['value']:
                 raise ValidationException(
                     'SMTP host must not be blank.', 'value')
         else:
-            raise ValidationException('Invalid setting key.', 'key')
+            raise ValidationException(
+                'Invalid setting key "{}".'.format(key), 'key')
 
         return doc
 

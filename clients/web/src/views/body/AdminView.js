@@ -4,7 +4,7 @@
 girder.views.AdminView = girder.View.extend({
     events: {
         'click .g-server-config': function () {
-            girder.events.trigger('g:navigateTo', girder.views.AdminConfig);
+            girder.router.navigate('settings', {trigger: true});
         },
         'click .g-assetstore-config': function () {
             girder.router.navigate('assetstores', {trigger: true});
@@ -15,8 +15,6 @@ girder.views.AdminView = girder.View.extend({
     },
 
     initialize: function () {
-        // This page should be re-rendered if the user logs in or out
-        girder.events.on('g:login', this.render, this);
         this.render();
     },
 

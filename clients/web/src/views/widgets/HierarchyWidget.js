@@ -7,6 +7,7 @@ girder.views.HierarchyWidget = girder.View.extend({
         'click a.g-edit-folder': 'editFolderDialog',
         'click a.g-download-folder': 'downloadFolder',
         'click a.g-delete-folder': 'deleteFolderDialog',
+        'click a.g-create-item': 'createItemDialog',
         'click .g-upload-here-button': 'uploadDialog',
         'click .g-folder-access-button': 'editFolderAccess',
         'click .g-hierarchy-level-up': 'upOneLevel'
@@ -211,6 +212,19 @@ girder.views.HierarchyWidget = girder.View.extend({
     },
 
     /**
+     * Prompt the user to create a new item in the current folder
+     */
+    createItemDialog: function () {
+        new girder.views.EditItemWidget({
+            el: $('#g-dialog-container'),
+            parentModel: this.parentModel
+        }).on('g:saved', function (item) {
+            this.itemListView.insertItem(item);
+            this.updateChecked();
+        }, this).render();
+    },
+
+    /**
      * Prompt user to edit the current folder
      */
     editFolderDialog: function () {
@@ -275,22 +289,24 @@ girder.views.HierarchyWidget = girder.View.extend({
 
         // Only show actions corresponding to the minimum access level over
         // the whole set of checked resources.
-        var minLevel = girder.AccessType.ADMIN;
+        var minFolderLevel = girder.AccessType.ADMIN;
         _.every(folders, function (cid) {
             var folder = this.folderListView.collection.get(cid);
-            minLevel = Math.min(minLevel, folder.getAccessLevel());
-            return minLevel > girder.AccessType.READ; // acts as 'break'
+            minFolderLevel = Math.min(minFolderLevel, folder.getAccessLevel());
+            return minFolderLevel > girder.AccessType.READ; // acts as 'break'
         }, this);
 
+        var minItemLevel = girder.AccessType.ADMIN;
         if (this.itemListView) {
             items = this.itemListView.checked;
             if (items.length) {
-                minLevel = Math.min(minLevel, this.parentModel.getAccessLevel());
+                minItemLevel = Math.min(minItemLevel, this.parentModel.getAccessLevel());
             }
         }
 
         this.checkedMenuWidget.update({
-            minLevel: minLevel,
+            minFolderLevel: minFolderLevel,
+            minItemLevel: minItemLevel,
             folderCount: folders.length,
             itemCount: items.length
         });

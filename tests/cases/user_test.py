@@ -207,6 +207,11 @@ class UserTestCase(base.TestCase):
             'password': 'goodpassword'
         }
         user = self.model('user').createUser(**params)
+
+        params['email'] = 'notasgood@email.com'
+        params['login'] = 'notasgoodlogin'
+        nonAdminUser = self.model('user').createUser(**params)
+
         resp = self.request(path='/user/{}'.format(user['_id']))
         self._verifyUserDocument(resp.json, admin=False)
 
@@ -228,6 +233,25 @@ class UserTestCase(base.TestCase):
         self.assertEqual(resp.json['email'], 'valid@email.com')
         self.assertEqual(resp.json['firstName'], 'NewFirst')
         self.assertEqual(resp.json['lastName'], 'New Last')
+
+        # test admin checkbox
+        params = {
+            'email': 'valid@email.com',
+            'firstName': 'NewFirst ',
+            'lastName': ' New Last ',
+            'admin': 'true'
+        }
+        resp = self.request(path='/user/{}'.format(user['_id']), method='PUT',
+                            user=user, params=params)
+        self.assertStatusOk(resp)
+        self._verifyUserDocument(resp.json)
+        self.assertEqual(resp.json['admin'], True)
+
+        # test admin flag as non-admin
+        params['admin'] = 'false'
+        resp = self.request(path='/user/{}'.format(user['_id']), method='PUT',
+                            user=nonAdminUser, params=params)
+        self.assertStatus(resp, 403)
 
     def testDeleteUser(self):
         """
@@ -288,9 +312,9 @@ class UserTestCase(base.TestCase):
         Test user list endpoint.
         """
         # Create some users.
-        users = [self.model('user').createUser(
-            'usr%s' % x, 'passwd', 'tst', '%s_usr' % x, 'u%s@u.com' % x)
-            for x in ['c', 'a', 'b']]
+        for x in ('c', 'a', 'b'):
+            self.model('user').createUser(
+                'usr%s' % x, 'passwd', 'tst', '%s_usr' % x, 'u%s@u.com' % x)
         resp = self.request(path='/user', method='GET', params={
             'limit': 2,
             'offset': 1
@@ -386,3 +410,75 @@ class UserTestCase(base.TestCase):
         self.assertHasKeys(
             resp.json['authToken'], ('token', 'expires', 'userId'))
         self._verifyAuthCookie(resp)
+
+    def testUserCreation(self):
+        admin = self.model('user').createUser(
+            'user1', 'passwd', 'tst', 'usr', 'user@user.com')
+        self.assertTrue(admin['admin'])
+
+        # Close registration
+        self.model('setting').set(SettingKey.REGISTRATION_POLICY, 'closed')
+
+        params = {
+            'email': 'some.email@email.com',
+            'login': 'otheruser',
+            'firstName': 'First',
+            'lastName': 'Last',
+            'password': 'mypass'
+        }
+
+        # Make sure we get a 400 when trying to register
+        resp = self.request(path='/user', method='POST', params=params)
+        self.assertStatus(resp, 400)
+        self.assertEqual(resp.json['message'],
+                         'Registration on this instance is closed. Contact an '
+                         'administrator to create an account for you.')
+
+        # Admins should still be able to create users
+        resp = self.request(path='/user', method='POST', params=params,
+                            user=admin)
+        self.assertStatusOk(resp)
+        user = resp.json
+        self.assertFalse(user['admin'])
+
+        # Normal users should not be able to create new users
+        resp = self.request(path='/user', method='POST', params=params,
+                            user=user)
+        self.assertStatus(resp, 400)
+        self.assertEqual(resp.json['message'],
+                         'Registration on this instance is closed. Contact an '
+                         'administrator to create an account for you.')
+
+        # Admins should be able to create other admin users
+        params = {
+            'email': 'other.email@email.com',
+            'login': 'otheruser2',
+            'firstName': 'First',
+            'lastName': 'Last',
+            'password': 'mypass',
+            'admin': True
+        }
+        resp = self.request(path='/user', method='POST', params=params,
+                            user=admin)
+        self.assertStatusOk(resp)
+        self.assertTrue(resp.json['admin'])
+
+    def testAdminFlag(self):
+        admin = self.model('user').createUser(
+            'user1', 'passwd', 'tst', 'usr', 'user@user.com')
+        self.assertTrue(admin['admin'])
+
+        params = {
+            'email': 'some.email@email.com',
+            'login': 'otheruser',
+            'firstName': 'First',
+            'lastName': 'Last',
+            'password': 'mypass',
+            'admin': True
+        }
+
+        # Setting admin param to True should have no effect for normal
+        # registration process
+        resp = self.request(path='/user', method='POST', params=params)
+        self.assertStatusOk(resp)
+        self.assertFalse(resp.json['admin'])

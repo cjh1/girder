@@ -93,13 +93,7 @@ Server Side Testing
 Running the tests
 ^^^^^^^^^^^^^^^^^
 
-Before you can run the tests, you'll need to install
-`pep8 <http://www.python.org/dev/peps/pep-0008/>`_ for Python style
-checking. ::
-
-    pip install pep8
-
-Also, you'll need to configure the project with CMake. ::
+First, you'll need to configure the project with CMake. ::
 
     mkdir ../girder-build
     cd ../girder-build
@@ -118,15 +112,10 @@ parallel. More information about CTest can be found
 Running the tests with coverage tracing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-If you want to run coverage, make sure you have installed
-`coverage.py <http://nedbatchelder.com/code/coverage/>`_: ::
-
-    pip install coverage
-
-And in your CMake configuration, set **PYTHON_COVERAGE** to **ON**. Then,
-configure with cmake and run **ctest**, and the coverage will be created. After
-the tests are run, you can find the HTML output from the coverage tool in the
-source directory under **/clients/web/dev/built/py_coverage**.
+To run python coverage on your tests, configure with cmake and run **ctest**.
+The coverage data will be automatically generated. After the tests are run,
+you can find the HTML output from the coverage tool in the source directory
+under **/clients/web/dev/built/py_coverage**.
 
 Creating tests
 ^^^^^^^^^^^^^^
@@ -297,8 +286,15 @@ example: ::
         .param('cat', 'The cat value.', required=False)
         .errorResponse())
 
-That will make your route automatically appear in the swagger documentation
-and will allow users to interact with it via that UI.
+That will make your route automatically appear in the Swagger documentation
+and will allow users to interact with it via that UI. See the
+:ref:`RESTful API docs<restapi>` for more information about the Swagger page.
+
+If you are creating routes that you explicitly do not wish to be exposed in the
+swagger documentation for whatever reason, you can set the handler's description
+to ``None``, and then no warning will appear. ::
+
+    myHandler.description = None
 
 Adding a new resource type to the web API
 *****************************************
@@ -444,7 +440,7 @@ To add tests for your plugin, you can make use of some handy CMake functions
 provided by the core system. For example: ::
 
     add_python_test(cat PLUGIN cats)
-    add_python_style_test(pep8_style_cats "${PROJECT_SOURCE_DIR}/plugins/cats/server")
+    add_python_style_test(python_static_analysis_cats "${PROJECT_SOURCE_DIR}/plugins/cats/server")
 
 Then you should create a ``plugin_tests`` package in your plugin: ::
 
@@ -520,6 +516,39 @@ that can be used to import content:
   directory. Any additional public static content that is required by your
   plugin that doesn't fall into one of the above categories can be placed here,
   such as static images, fonts, or third-party static libraries.
+
+Executing custom Grunt build steps for your plugin
+**************************************************
+
+For more complex plugins which require custom Grunt tasks to build, the user can
+specify custom targets within their own Grunt file that will be executed when
+the main Girder grunt step is executed. To use this functionality, add a **grunt**
+key to your **plugin.json** file. ::
+
+    {
+    "name": "MY_PLUGIN",
+    "grunt":
+        {
+        "file" : "Gruntfile.js",
+        "defaultTargets": [ "MY_PLUGIN_TASK" ]
+        }
+    }
+
+This will allow to register a grunt file relative to the plugin root directory
+and add any target to the default one using the "defaultTargets" array.
+
+.. note:: The **file** key within the **grunt** object must be a path that is
+   relative to the root directory of your plugin. It does not have to be called
+   ``Gruntfile.js``, it can be called anything you want.
+
+All paths within your custom grunt tasks must be relative to the root dir of the
+Girder source repository, rather than relative to the plugin directory. ::
+
+    module.exports = function (grunt) {
+        grunt.registerTask('MY_PLUGIN_TASK', 'Custom plugin build task', function () {
+            /* ... Execute custom behavior ... */
+        });
+    };
 
 Javascript extension capabilities
 *********************************

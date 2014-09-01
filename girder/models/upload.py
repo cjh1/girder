@@ -17,7 +17,6 @@
 #  limitations under the License.
 ###############################################################################
 
-import cherrypy
 import datetime
 
 from girder import events
@@ -63,6 +62,8 @@ class Upload(Model):
         # If upload is finished, we finalize it
         if upload['received'] == upload['size']:
             return self.finalizeUpload(upload, assetstore)
+        else:
+            return upload
 
     def requestOffset(self, upload):
         """

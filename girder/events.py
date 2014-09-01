@@ -41,7 +41,6 @@ function to be called when the task is finished. That callback function will
 receive the Event object as its only argument.
 """
 
-import copy
 import Queue
 import threading
 import types
@@ -87,6 +86,7 @@ class Event(object):
         event is handled by the core system.
         """
         self.defaultPrevented = True
+        return self
 
     def stopPropagation(self):
         """
@@ -94,6 +94,7 @@ class Event(object):
         stop any other listeners to the event from being executed.
         """
         self.propagate = False
+        return self
 
     def addResponse(self, response):
         """

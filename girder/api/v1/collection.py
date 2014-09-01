@@ -41,10 +41,9 @@ class Collection(Resource):
         limit, offset, sort = self.getPagingParameters(params, 'name')
 
         if 'text' in params:
-            return self.model('collection').textSearch(
-                params['text'], user=user, limit=limit, project={
-                    'name': 1
-                })
+            return [self.model('collection').filter(c, user) for c in
+                    self.model('collection').textSearch(
+                        params['text'], user=user, limit=limit, offset=offset)]
 
         cols = self.model('collection').list(user=user, offset=offset,
                                              limit=limit, sort=sort)
@@ -70,7 +69,7 @@ class Collection(Resource):
         user = self.getCurrentUser()
         self.requireAdmin(user)
 
-        public = params.get('public', 'false').lower() == 'true'
+        public = self.boolParam('public', params, default=False)
 
         collection = self.model('collection').createCollection(
             name=params['name'], description=params.get('description'),
@@ -82,7 +81,8 @@ class Collection(Resource):
         .responseClass('Collection')
         .param('name', 'Name for the collection. Must be unique.')
         .param('description', 'Collection description.', required=False)
-        .param('public', 'Public read access flag.', dataType='boolean')
+        .param('public', 'Whether the collection should be publicly visible.',
+               dataType='boolean')
         .errorResponse()
         .errorResponse('You are not an administrator', 403))
 
@@ -109,7 +109,7 @@ class Collection(Resource):
     def updateCollectionAccess(self, coll, params):
         self.requireParams(('access',), params)
 
-        public = params.get('public', '').lower() == 'true'
+        public = self.boolParam('public', params, default=False)
         self.model('collection').setPublic(coll, public)
 
         try:
@@ -122,6 +122,8 @@ class Collection(Resource):
         Description('Set the access control list for a collection.')
         .param('id', 'The ID of the collection.', paramType='path')
         .param('access', 'The access control list as JSON.')
+        .param('public', 'Whether the collection should be publicly visible.',
+               dataType='boolean')
         .errorResponse('ID was invalid.')
         .errorResponse('Admin permission denied on the collection.', 403))
 
@@ -139,7 +141,6 @@ class Collection(Resource):
         .param('id', 'The ID of the collection.', paramType='path')
         .param('name', 'Unique name for the collection.', required=False)
         .param('description', 'Collection description.', required=False)
-        .param('public', 'Public read access flag.', dataType='boolean')
         .errorResponse('ID was invalid.')
         .errorResponse('Write permission denied on the collection.', 403))
 

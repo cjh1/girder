@@ -62,12 +62,7 @@ class Folder(Resource):
         limit, offset, sort = self.getPagingParameters(params, 'lowerName')
         user = self.getCurrentUser()
 
-        if 'text' in params:
-            return self.model('folder').textSearch(
-                params['text'], user=user, limit=limit, project={
-                    'name': 1
-                })
-        elif 'parentId' in params and 'parentType' in params:
+        if 'parentId' in params and 'parentType' in params:
             parentType = params['parentType'].lower()
             if parentType not in ('collection', 'folder', 'user'):
                 raise RestException('The parentType must be user, collection,'
@@ -77,10 +72,21 @@ class Folder(Resource):
                 id=params['parentId'], user=user, level=AccessType.READ,
                 exc=True)
 
+            filters = {}
+            if 'text' in params:
+                filters['$text'] = {
+                    '$search': params['text']
+                }
+
             return [self.model('folder').filter(folder, user) for folder in
                     self.model('folder').childFolders(
                         parentType=parentType, parent=parent, user=user,
-                        offset=offset, limit=limit, sort=sort)]
+                        offset=offset, limit=limit, sort=sort, filters=filters)]
+        elif 'text' in params:
+            return [self.model('folder').filter(folder, user) for folder in
+                    self.model('folder').textSearch(
+                        params['text'], user=user, limit=limit, offset=offset,
+                        sort=sort)]
         else:
             raise RestException('Invalid search mode.')
     find.description = (
@@ -146,36 +152,43 @@ class Folder(Resource):
 
     @loadmodel(map={'id': 'folder'}, model='folder', level=AccessType.WRITE)
     def updateFolder(self, folder, params):
-        """
-        Update the folder.
-
-        :param name: Name for the folder.
-        :param description: Description for the folder.
-        :param public: Public read access flag.
-        :type public: bool
-        """
+        user = self.getCurrentUser()
         folder['name'] = params.get('name', folder['name']).strip()
         folder['description'] = params.get(
             'description', folder['description']).strip()
 
         folder = self.model('folder').updateFolder(folder)
-        return self.model('folder').filter(folder, self.getCurrentUser())
+
+        if 'parentType' in params and 'parentId' in params:
+            parentType = params['parentType'].lower()
+            if parentType not in ('user', 'collection', 'folder'):
+                raise RestException('Invalid parentType.')
+
+            parent = self.model(parentType).load(
+                params['parentId'], level=AccessType.WRITE, user=user, exc=True)
+
+            folder = self.model('folder').move(folder, parent, parentType)
+
+        return self.model('folder').filter(folder, user)
     updateFolder.description = (
-        Description('Update a folder by ID.')
+        Description('Update a folder or move it into a new parent.')
         .responseClass('Folder')
         .param('id', 'The ID of the folder.', paramType='path')
-        .param('name', 'Name of the folder.')
+        .param('name', 'Name of the folder.', required=False)
         .param('description', 'Description for the folder.', required=False)
-        .param('public', "Whether the folder should be public or private.",
-               required=False, dataType='boolean')
+        .param('parentType', 'Parent type for the new parent of this folder.',
+               required=False)
+        .param('parentId', 'Parent ID for the new parent of this folder.',
+               required=False)
         .errorResponse('ID was invalid.')
-        .errorResponse('Write access was denied for the folder.', 403))
+        .errorResponse('Write access was denied for the folder or its new '
+                       'parent object.', 403))
 
     @loadmodel(map={'id': 'folder'}, model='folder', level=AccessType.ADMIN)
     def updateFolderAccess(self, folder, params):
         self.requireParams(['access'], params)
 
-        public = params.get('public', 'false').lower() == 'true'
+        public = self.boolParam('public', params, default=False)
         self.model('folder').setPublic(folder, public)
 
         try:
@@ -188,7 +201,8 @@ class Folder(Resource):
         Description('Update the access control list for a folder.')
         .param('id', 'The ID of the folder.', paramType='path')
         .param('access', 'The JSON-encoded access control list.')
-        .param('public', 'Public read access flag.', dataType='bool')
+        .param('public', "Whether the folder should be publicly visible.",
+               dataType='boolean')
         .errorResponse('ID was invalid.')
         .errorResponse('Admin access was denied for the folder.', 403))
 
@@ -205,16 +219,13 @@ class Folder(Resource):
         :param public: Public read access flag.
         :type public: bool
         """
-        self.requireParams(['name', 'parentId'], params)
+        self.requireParams(('name', 'parentId'), params)
 
         user = self.getCurrentUser()
         parentType = params.get('parentType', 'folder').lower()
         name = params['name'].strip()
         description = params.get('description', '').strip()
-        public = params.get('public')
-
-        if public is not None:
-            public = public.lower() == 'true'
+        public = self.boolParam('public', params, default=None)
 
         if parentType not in ('folder', 'user', 'collection'):
             raise RestException('Set parentType to collection, folder, '
@@ -229,12 +240,10 @@ class Folder(Resource):
             parent=parent, name=name, parentType=parentType, creator=user,
             description=description, public=public)
 
-        if parentType == 'user':
+        if parentType in ('user', 'collection'):
             folder = self.model('folder').setUserAccess(
                 folder, user=user, level=AccessType.ADMIN, save=True)
-        elif parentType == 'collection':
-            # TODO set appropriate top-level community folder permissions
-            pass
+
         return self.model('folder').filter(folder, user)
     createFolder.description = (
         Description('Create a new folder.')
@@ -244,7 +253,7 @@ class Folder(Resource):
         .param('parentId', "The ID of the folder's parent.")
         .param('name', "Name of the folder.")
         .param('description', "Description for the folder.", required=False)
-        .param('public', """Wheter the folder should be public or private. By
+        .param('public', """Whether the folder should be publicly visible. By
                default, inherits the value from parent folder, or in the
                case of user or collection parentType, defaults to False.""",
                required=False, dataType='boolean')

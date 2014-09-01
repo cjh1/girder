@@ -124,6 +124,29 @@ class Folder(AccessControlledModel):
 
         return doc
 
+    def move(self, folder, parent, parentType):
+        """
+        Move the given folder from its current parent to another parent object.
+
+        :param folder: The folder to move.
+        :type folder: dict
+        :param parent: The new parent object.
+        :param parentType: The type of the new parent object (user, collection,
+        or folder).
+        :type parentType: str
+        """
+        folder['parentId'] = parent['_id']
+        folder['parentCollection'] = parentType
+
+        if parentType == 'folder':
+            folder['baseParentType'] = parent['baseParentType']
+            folder['baseParentId'] = parent['baseParentId']
+        else:
+            folder['baseParentType'] = parentType
+            folder['baseParentId'] = parent['_id']
+
+        return self.save(folder)
+
     def remove(self, folder):
         """
         Delete a folder recursively.
@@ -157,7 +180,7 @@ class Folder(AccessControlledModel):
         # Delete this folder
         AccessControlledModel.remove(self, folder)
 
-    def childItems(self, folder, limit=50, offset=0, sort=None):
+    def childItems(self, folder, limit=50, offset=0, sort=None, filters={}):
         """
         Generator function that yields child items in a folder.
 
@@ -165,10 +188,12 @@ class Folder(AccessControlledModel):
         :param limit: Result limit.
         :param offset: Result offset.
         :param sort: The sort structure to pass to pymongo.
+        :param filters: Additional query operators.
         """
         q = {
             'folderId': folder['_id']
         }
+        q.update(filters)
 
         cursor = self.model('item').find(
             q, limit=limit, offset=offset, sort=sort)
@@ -176,7 +201,7 @@ class Folder(AccessControlledModel):
             yield item
 
     def childFolders(self, parent, parentType, user=None, limit=50, offset=0,
-                     sort=None):
+                     sort=None, filters={}):
         """
         This generator will yield child folders of a user, collection, or
         folder, with access policy filtering.
@@ -190,6 +215,7 @@ class Folder(AccessControlledModel):
         :param limit: Result limit.
         :param offset: Result offset.
         :param sort: The sort structure to pass to pymongo.
+        :param filters: Additional query operators.
         """
         parentType = parentType.lower()
         if parentType not in ('folder', 'user', 'collection'):
@@ -200,6 +226,7 @@ class Folder(AccessControlledModel):
             'parentId': parent['_id'],
             'parentCollection': parentType
         }
+        q.update(filters)
 
         # Perform the find; we'll do access-based filtering of the result set
         # afterward.

@@ -51,6 +51,43 @@ girderTest.createUser = function (login, email, firstName, lastName, password) {
     };
 };
 
+girderTest.login = function (login, firstName, lastName, password) {
+
+    return function () {
+        runs(function () {
+            expect(girder.currentUser).toBe(null);
+        });
+
+        waitsFor(function () {
+            return $('.g-login').length > 0;
+        }, 'girder app to render');
+
+        runs(function () {
+            $('.g-login').click();
+        });
+
+        waitsFor(function () {
+            return $('input#g-login').length > 0;
+        }, 'register dialog to appear');
+
+        runs(function () {
+            $('#g-login').val(login);
+            $('#g-password').val(password);
+            $('#g-login-button').click();
+        });
+
+        waitsFor(function () {
+            return $('.g-user-text a')[0].text === firstName + ' ' + lastName;
+        }, 'user to be logged in');
+
+        runs(function () {
+            expect(girder.currentUser).not.toBe(null);
+            expect(girder.currentUser.name()).toBe(firstName + ' ' + lastName);
+            expect(girder.currentUser.get('login')).toBe(login);
+        });
+    };
+};
+
 girderTest.logout = function () {
 
     return function () {
@@ -72,6 +109,33 @@ girderTest.logout = function () {
     };
 };
 
+girderTest.goToCurrentUserSettings = function () {
+
+    return function () {
+        runs(function () {
+            expect(girder.currentUser).not.toBe(null);
+        });
+
+        waitsFor(function () {
+            return $('.g-my-settings').length > 0;
+        }, 'my account link to render');
+
+        runs(function () {
+            $('.g-my-settings').click();
+        });
+
+        waitsFor(function () {
+            return $('input#g-email').length > 0;
+        }, 'email input to appear');
+
+        runs(function () {
+            expect($('input#g-email').val()).toBe(girder.currentUser.get('email'));
+            expect($('input#g-firstName').val()).toBe(girder.currentUser.get('firstName'));
+            expect($('input#g-lastName').val()).toBe(girder.currentUser.get('lastName'));
+        });
+    };
+};
+
 // This assumes that you're logged into the system and on the create collection
 // page.
 girderTest.createCollection = function (collName, collDesc) {
@@ -82,6 +146,8 @@ girderTest.createCollection = function (collName, collDesc) {
             return $('li.active .g-page-number').text() === 'Page 1' &&
                    $('.g-collection-create-button').is(':enabled');
         }, 'create collection button to appear');
+
+        waits(500);
 
         runs(function () {
             $('.g-collection-create-button').click();
@@ -127,6 +193,28 @@ girderTest.goToGroupsPage = function () {
         waitsFor(function () {
             return $(".g-group-search-form .g-search-field:visible").is(':enabled');
         }, 'navigate to groups page');
+    };
+
+};
+
+// Go to users page
+girderTest.goToUsersPage = function () {
+
+    return function () {
+
+        waits(1000);
+
+        waitsFor(function () {
+            return $("a.g-nav-link[g-target='users']:visible").length > 0;
+        }, 'users nav link to appear');
+
+        runs(function () {
+            $("a.g-nav-link[g-target='users']").click();
+        });
+
+        waitsFor(function () {
+            return $(".g-user-search-form .g-search-field:visible").is(':enabled');
+        }, 'navigate to users page');
     };
 
 };

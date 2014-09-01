@@ -22,7 +22,6 @@ import codecs
 import cherrypy
 import io
 import json
-import mimetypes
 import os
 import signal
 import sys
@@ -100,7 +99,7 @@ class TestCase(unittest.TestCase, model_importer.ModelImporter):
         assetstorePath = os.path.join(
             ROOT_DIR, 'tests', 'assetstore',
             os.environ.get('GIRDER_TEST_ASSETSTORE', 'test'))
-        self.model('assetstore').createFilesystemAssetstore(
+        self.assetstore = self.model('assetstore').createFilesystemAssetstore(
             name='Test', root=assetstorePath)
 
         addr = ':'.join(map(str, mockSmtp.address))
@@ -218,7 +217,7 @@ class TestCase(unittest.TestCase, model_importer.ModelImporter):
 
     def request(self, path='/', method='GET', params={}, user=None,
                 prefix='/api/v1', isJson=True, basicAuth=None, body=None,
-                type=None):
+                type=None, exception=False, cookie=None):
         """
         Make an HTTP request.
 
@@ -232,6 +231,8 @@ class TestCase(unittest.TestCase, model_importer.ModelImporter):
         :param isJson: Whether the response is a JSON object.
         :param basicAuth: A string to pass with the Authorization: Basic header
                           of the form 'login:password'
+        :param exception: Set this to True if a 500 is expected from this call.
+        :param cookie: A custom cookie value to set.
         :returns: The cherrypy response object from the request.
         """
         headers = [('Host', '127.0.0.1'), ('Accept', 'application/json')]
@@ -255,7 +256,9 @@ class TestCase(unittest.TestCase, model_importer.ModelImporter):
         request, response = app.get_serving(local, remote, 'http', 'HTTP/1.1')
         request.show_tracebacks = True
 
-        if user is not None:
+        if cookie is not None:
+            headers.append(('Cookie', cookie))
+        elif user is not None:
             headers.append(('Cookie', self._genCookie(user)))
 
         if basicAuth is not None:
@@ -276,7 +279,7 @@ class TestCase(unittest.TestCase, model_importer.ModelImporter):
                 print response.collapse_body()
                 raise AssertionError('Did not receive JSON response')
 
-        if response.output_status.startswith('500'):
+        if not exception and response.output_status.startswith('500'):
             raise AssertionError("Internal server error: %s" % response.body)
 
         return response

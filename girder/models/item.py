@@ -19,7 +19,7 @@
 
 import datetime
 
-from .model_base import Model, ValidationException, AccessException
+from .model_base import Model, ValidationException
 from girder.constants import AccessType
 
 
@@ -119,6 +119,21 @@ class Item(Model):
 
         return doc
 
+    def move(self, item, folder):
+        """
+        Move the given item from its current folder into another folder.
+
+        :param item: The item to move.
+        :type item: dict
+        :param folder: The folder to move the item into.
+        :type folder: dict.
+        """
+        item['folderId'] = folder['_id']
+        item['baseParentType'] = folder['baseParentType']
+        item['baseParentId'] = folder['baseParentId']
+
+        return self.save(item)
+
     def childFiles(self, item, limit=50, offset=0, sort=None):
         """
         Generator function that yields child files in the item.
@@ -163,15 +178,15 @@ class Item(Model):
         # Delete the item itself
         Model.remove(self, item)
 
-    def textSearch(self, query, project, user=None, limit=20):
+    def textSearch(self, query, user=None, filters={}, limit=50, offset=0,
+                   sort=None, fields=None):
         """
         Custom override of Model.textSearch to filter items by permissions
         of the parent folder.
         """
-
         # get the non-filtered search result from Model.textSearch
-        project['folderId'] = 1
-        results = Model.textSearch(self, query=query, project=project)
+        results = Model.textSearch(self, query=query, limit=0, sort=sort,
+                                   filters=filters)
 
         # list where we will store the filtered results
         filtered = []
@@ -180,9 +195,10 @@ class Item(Model):
         folderCache = {}
 
         # loop through all results in the non-filtered list
+        i = 0
         for result in results:
             # check if the folderId is cached
-            folderId = result['obj'].pop('folderId')
+            folderId = result['folderId']
 
             if folderId not in folderCache:
                 # if the folderId is not cached check for read permission
@@ -192,16 +208,25 @@ class Item(Model):
                     folder, user=user, level=AccessType.READ)
 
             if folderCache[folderId] is True:
-                filtered.append({
-                    'name': result['obj']['name'],
-                    '_id': result['obj']['_id']
-                })
+                if i < offset:
+                    i += 1
+                    continue
 
-            # once we have hit the requested limit, return
-            if len(filtered) >= limit:
-                break
+                filtered.append(result)
+
+                # once we have hit the requested limit, return
+                if len(filtered) >= limit:
+                    break
 
         return filtered
+
+    def hasAccess(self, item, user=None, level=AccessType.READ):
+        """
+        Test access for a given user to this item. Simply calls this method
+        on the parent folder.
+        """
+        folder = self.model('folder').load(item['folderId'], force=True)
+        return self.model('folder').hasAccess(folder, user=user, level=level)
 
     def filterResultsByPermission(self, cursor, user, level, limit, offset,
                                   removeKeys=()):

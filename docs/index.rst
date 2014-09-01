@@ -13,9 +13,11 @@ Girder: High-Performance Data Management
    configuration
    deploy
    user-guide
+   plugins
    build-docs
    api-docs
    development
+   external-web-clients
 
 Indices and tables
 ------------------

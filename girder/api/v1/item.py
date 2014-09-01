@@ -22,9 +22,8 @@ import json
 
 from ..describe import Description
 from ..rest import Resource, RestException, loadmodel
-from ...models.model_base import ValidationException
-from ...utility import ziputil
-from ...constants import AccessType
+from girder.utility import ziputil
+from girder.constants import AccessType
 
 
 class Item(Resource):
@@ -63,15 +62,23 @@ class Item(Resource):
         limit, offset, sort = self.getPagingParameters(params, 'lowerName')
         user = self.getCurrentUser()
 
-        if 'text' in params:
-            return self.model('item').textSearch(
-                params['text'], {'name': 1}, user=user, limit=limit)
-        elif 'folderId' in params:
+        if 'folderId' in params:
             folder = self.model('folder').load(id=params['folderId'], user=user,
                                                level=AccessType.READ, exc=True)
-
-            return [item for item in self.model('folder').childItems(
-                folder=folder, limit=limit, offset=offset, sort=sort)]
+            filters = {}
+            if 'text' in params:
+                filters['$text'] = {
+                    '$search': params['text']
+                }
+            return [self.model('item').filter(item) for item in
+                    self.model('folder').childItems(
+                        folder=folder, limit=limit, offset=offset, sort=sort,
+                        filters=filters)]
+        elif 'text' in params:
+            return [self.model('item').filter(item) for item in
+                    self.model('item').textSearch(
+                        params['text'], user=user, limit=limit, offset=offset,
+                        sort=sort)]
         else:
             raise RestException('Invalid search mode.')
     find.description = (
@@ -140,16 +147,23 @@ class Item(Resource):
         item['description'] = params.get(
             'description', item['description']).strip()
 
-        item = self.model('item').updateItem(item)
+        self.model('item').updateItem(item)
+
+        if 'folderId' in params:
+            folder = self.model('folder').load(
+                params['folderId'], user=user, level=AccessType.WRITE, exc=True)
+            self.model('item').move(item, folder)
         return self.model('item').filter(item)
     updateItem.description = (
-        Description('Edit an item by ID.')
+        Description('Edit an item or move it to another folder.')
         .responseClass('Item')
         .param('id', 'The ID of the item.', paramType='path')
         .param('name', 'Name for the item.', required=False)
-        .param('description', 'Description for the item', required=False)
+        .param('description', 'Description for the item.', required=False)
+        .param('folderId', 'Pass this to move the item to a new folder.',
+               required=False)
         .errorResponse('ID was invalid.')
-        .errorResponse('Write access was denied for the item.', 403))
+        .errorResponse('Write access was denied for the item or folder.', 403))
 
     @loadmodel(map={'id': 'item'}, model='item', level=AccessType.WRITE)
     def setMetadata(self, item, params):
@@ -158,13 +172,11 @@ class Item(Resource):
         except ValueError:
             raise RestException('Invalid JSON passed in request body.')
 
-        # Make sure we let user know if we can't accept one of their metadata
-        # keys
+        # Make sure we let user know if we can't accept a metadata key
         for k in metadata:
             if '.' in k or k[0] == '$':
-                raise RestException('The key name ' + k + ' must not ' +
-                                    'contain a period or begin with a ' +
-                                    'dollar sign.')
+                raise RestException('The key name {} must not contain a period '
+                                    'or begin with a dollar sign.'.format(k))
 
         return self.model('item').setMetadata(item, metadata)
     setMetadata.description = (
@@ -234,7 +246,7 @@ class Item(Resource):
         .errorResponse('ID was invalid.')
         .errorResponse('Read access was denied for the item.', 403))
 
-    @loadmodel(map={'id': 'item'}, model='item', level=AccessType.ADMIN)
+    @loadmodel(map={'id': 'item'}, model='item', level=AccessType.WRITE)
     def deleteItem(self, item, params):
         """
         Delete an item and its contents.
@@ -245,7 +257,7 @@ class Item(Resource):
         Description('Delete an item by ID.')
         .param('id', 'The ID of the item.', paramType='path')
         .errorResponse('ID was invalid.')
-        .errorResponse('Admin access was denied for the item.', 403))
+        .errorResponse('Write access was denied for the item.', 403))
 
     @loadmodel(map={'id': 'item'}, model='item', level=AccessType.READ)
     def rootpath(self, item, params):
@@ -254,7 +266,7 @@ class Item(Resource):
         """
         return self.model('item').parentsToRoot(item, self.getCurrentUser())
     rootpath.description = (
-        Description('Get the path to the root of the item\'s hierarchy')
-        .param('id', 'The ID of the item', paramType='path')
+        Description('Get the path to the root of the item\'s hierarchy.')
+        .param('id', 'The ID of the item.', paramType='path')
         .errorResponse('ID was invalid.')
         .errorResponse('Read access was denied for the item.', 403))
