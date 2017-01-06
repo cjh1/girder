@@ -23,7 +23,7 @@ import os
 import six
 
 from girder import constants
-from girder.api.rest import getCurrentUser, RestException
+from girder.api.rest import getCurrentUser, RestException, getBodyJson
 from girder.constants import TerminalColor
 from girder.utility import config, toBool
 from girder.utility.model_importer import ModelImporter
@@ -517,13 +517,16 @@ class autoDescribeRoute(describeRoute):  # noqa: class name
             params = {k: v for k, v in six.viewitems(kwargs) if k != 'params'}
             params.update(kwargs.get('params', {}))
 
+            print "wrapped"
             for descParam in self.description.params:
-                if 'type' not in descParam:
-                    # likely a body param, ignore for now TODO ?
+
+                # We need either a type or a schema ( for message body )
+                if 'type' not in descParam and 'schema' not in descParam:
                     continue
                 name = descParam['name']
                 if name in params:
                     if name in self.description.jsonParams:
+                        print "here we go '%s'" % name
                         info = self.description.jsonParams[name]
                         kwargs[name] = self._loadJson(name, info, params[name])
                     elif name in self.description.modelParams:
@@ -533,6 +536,9 @@ class autoDescribeRoute(describeRoute):  # noqa: class name
                     else:
                         kwargs[name] = self._validateParam(name, descParam, params[name])
                     kwargs['params'].pop(name, None)  # Remove from form/query params
+                elif descParam['in'] == 'body' and name in self.description.jsonParams:
+                    kwargs[name] = getBodyJson()
+                    print "hello"
                 elif 'default' in descParam:
                     kwargs[name] = descParam['default']
                 elif descParam['required']:

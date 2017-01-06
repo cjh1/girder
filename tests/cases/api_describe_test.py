@@ -229,9 +229,10 @@ class ApiDescribeTestCase(base.TestCase):
                 .param('string', '', enum=['hello', 'world'], strip=True, lower=True)
                 .jsonParam('json1', '', required=False, requireArray=True)
                 .jsonParam('json2', '', required=False, requireObject=True, default={})
+                .jsonParam('json_body', '', required=False, paramType='body')
             )
             def test(self, b1, b2, string, integer, float, timestamp, datestamp, json1, json2,
-                     params):
+                     json_body, params):
                 testRuns.append({
                     'b1': b1,
                     'b2': b2,
@@ -241,7 +242,8 @@ class ApiDescribeTestCase(base.TestCase):
                     'timestamp': timestamp,
                     'datestamp': datestamp,
                     'json1': json1,
-                    'json2': json2
+                    'json2': json2,
+                    'json_body': json_body
                 })
 
         server.root.api.v1.auto_describe = AutoDescribe()
@@ -328,3 +330,11 @@ class ApiDescribeTestCase(base.TestCase):
             'timestamp': datetime.datetime(2017, 1, 1, 11, 35, 22),
             'datestamp': datetime.date(2017, 2, 2)
         })
+
+        # Test request body
+        resp = self.request('/auto_describe/test', body=json.dumps({'emmet': 'otter'}))
+        self.assertStatusOk(resp)
+        self.assertEqual(len(testRuns), 1)
+        #self.assertEqual(testRuns[0], expected)
+        del testRuns[-1]
+
